@@ -4,76 +4,92 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use App\Models\Diagnosis;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Conversation;
+use App\Models\Message;
 
 class AIController extends Controller
 {
-    public function chatPredict(Request $request)
+    public function index($id = null)
     {
-        $request->validate([
-            'image' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
-            'message' => 'nullable|string'
+        $conversations = Conversation::where('user_id', Auth::id())
+            ->orderBy('updated_at', 'desc')
+            ->get();
+
+        $currentConversation = $id
+            ? Conversation::with('messages')
+            ->where('user_id', Auth::id())
+            ->findOrFail($id)
+            : null;
+
+        return view('dashboard', compact(
+            'conversations',
+            'currentConversation'
+        ));
+    }
+
+    public function chatPredict(Request $request)
+{
+    $request->validate([
+        'image' => 'required|image|max:10240',
+        'message' => 'nullable|string',
+        'conversation_id' => 'nullable|integer'
+    ]);
+
+    $file = $request->file('image');
+    $fileContent = file_get_contents($file->getRealPath());
+    $fileName = $file->getClientOriginalName();
+    $conversationId = $request->conversation_id;
+
+    $response = Http::attach('file', $fileContent, $fileName)
+        ->post('http://127.0.0.1:8001/predict');
+
+    $ai = $response->json();
+
+    if (isset($ai['status']) && $ai['status'] === 'error') {
+        return response()->json([
+            'status' => 'error',
+            'message' => $ai['message'] ?? 'Ảnh không hợp lệ. Vui lòng chụp lại lá cây.'
         ]);
+    }
 
-        try {
-            if ($request->hasFile('image')) {
+    if (!$conversationId) {
+        $conversation = Conversation::create([
+            'user_id' => Auth::id(),
+            'title' => ($ai['plant'] ?? 'Cây') . ' - ' . ($ai['disease'] ?? 'Đang khám')
+        ]);
+        $conversationId = $conversation->id;
+    }
 
-                $file = $request->file('image');
+    $userMessage = Message::create([
+        'conversation_id' => $conversationId,
+        'role' => 'user',
+        'content' => $request->message ?: 'Ảnh chẩn đoán'
+    ]);
 
-                /** * BƯỚC QUAN TRỌNG: 
-                 * Phải đọc nội dung file ngay lập tức trước khi Spatie di chuyển file đi
-                 */
-                $fileContents = file_get_contents($file->getRealPath());
-                $fileName = $file->getClientOriginalName();
+    $userMessage->addMedia($file)->toMediaCollection('plant_images');
 
-                // 1. Lưu bản ghi vào Database
-                $diagnosis = Diagnosis::create([
-                    'disease_name' => 'Đang phân tích...',
-                    'confidence' => 0
-                ]);
+    Message::create([
+        'conversation_id' => $conversationId,
+        'role' => 'assistant',
+        'content' => json_encode($ai)
+    ]);
 
-                // 2. Thư viện Spatie di chuyển file vào storage (Sau dòng này getRealPath() sẽ bị trống)
-                $media = $diagnosis->addMedia($file)
-                    ->toMediaCollection('plant_images');
+    return response()->json([
+        'status' => 'success',
+        'conversation_id' => $conversationId,
+        'plant' => $ai['plant'] ?? '',
+        'disease' => $ai['disease'] ?? '',
+        'treatment' => $ai['treatment'] ?? '',
+        'confidence' => $ai['confidence'] ?? 0
+    ]);
+}
 
-                // 3. Gửi nội dung đã đọc sang Server Python (cổng 8001)
-                $response = Http::attach(
-                    'file',
-                    $fileContents, // Gửi biến đã lưu nội dung
-                    $fileName
-                )->post('http://127.0.0.1:8001/predict');
+    public function destroy($id)
+    {
+        $conversation = Conversation::where('user_id', Auth::id())->findOrFail($id);
+        $conversation->delete();
 
-                if ($response->successful()) {
-                    $ai = $response->json();
-
-                    // 4. Cập nhật kết quả AI trả về vào DB
-                    $diagnosis->update([
-                        'disease_name' => $ai['prediction'] ?? 'Không xác định',
-                        'confidence' => $ai['confidence'] ?? 0
-                    ]);
-
-                    return response()->json([
-                        'type' => 'prediction',
-                        'prediction' => $ai['prediction'] ?? 'Không xác định',
-                        'confidence' => $ai['confidence'] ?? 0,
-                        'image' => $diagnosis->getFirstMediaUrl('plant_images')
-                    ]);
-                }
-
-                return response()->json(['error' => 'AI Server không phản hồi'], 500);
-            }
-
-            // Nếu chỉ gửi tin nhắn chữ không có ảnh
-            return response()->json([
-                'type' => 'text',
-                'reply' => 'Bạn hãy gửi ảnh để mình phân tích 🌱'
-            ]);
-
-        } catch (\Exception $e) {
-            // Trả về lỗi chi tiết để dễ dàng kiểm tra
-            return response()->json([
-                'error' => 'Lỗi hệ thống: ' . $e->getMessage()
-            ], 500);
-        }
+        return redirect()->route('dashboard')->with('success', 'Đã xóa đoạn chat');
     }
 }
