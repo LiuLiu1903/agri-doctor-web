@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev
+    sqlite-dev
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg
 RUN docker-php-ext-install pdo_sqlite opcache gd
