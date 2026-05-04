@@ -38,7 +38,11 @@ RUN touch database/database.sqlite \
 RUN cp .env.example .env
 RUN php artisan key:generate --force
 RUN php artisan vendor:publish --provider="Spatie\MediaLibrary\MediaLibraryServiceProvider" --tag="medialibrary-migrations"
+RUN php artisan vendor:publish --tag=breeze --force
+RUN php artisan storage:link || true
 RUN php artisan migrate --force --seed
+RUN php artisan config:cache
+RUN php artisan view:cache
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
