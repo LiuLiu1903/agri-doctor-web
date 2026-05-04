@@ -31,7 +31,9 @@ RUN mkdir -p storage/framework/{sessions,views,cache} \
 RUN touch database/database.sqlite \
     && chown www-data:www-data database/database.sqlite
 
+RUN cp .env.example .env
 RUN php artisan key:generate --force
+RUN php artisan vendor:publish --provider="Spatie\MediaLibrary\MediaLibraryServiceProvider" --tag="medialibrary-migrations"
 RUN php artisan migrate --force --seed
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf
