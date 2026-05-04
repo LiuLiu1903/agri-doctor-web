@@ -8,15 +8,15 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
     libsqlite3-dev \
+    libexif-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg
-RUN docker-php-ext-install pdo pdo_sqlite opcache gd
+RUN docker-php-ext-install pdo pdo_sqlite opcache gd exif
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
-
 COPY . .
 
 RUN composer install --no-dev --optimize-autoloader --no-interaction
@@ -36,5 +36,4 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 
 EXPOSE 80
-
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
