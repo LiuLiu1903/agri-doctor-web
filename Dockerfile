@@ -4,6 +4,8 @@ RUN apt-get update && apt-get install -y \
     nginx \
     supervisor \
     curl \
+    git \
+    unzip \
     libpng-dev \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
